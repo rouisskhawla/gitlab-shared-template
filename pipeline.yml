@@ -20,6 +20,7 @@
     - shared
   extends: .compute-version
   script:
+    - cd $SERVICE_DIR
     - |
       if [ "$SERVICE_TYPE" == "frontend" ]; then
         cd $SERVICE_DIR
@@ -30,7 +31,6 @@
           npm run build -- --configuration production
         fi
       else
-        cd $SERVICE_DIR
         mvn clean package -DskipTests
       fi
   artifacts:
