@@ -1,44 +1,112 @@
+.compute-version:
+  before_script:
+    - |
+      SHORT_SHA=$(echo $CI_COMMIT_SHA | cut -c1-7)
+      BUILD_NUMBER=$CI_PIPELINE_IID
+      if [ "$CI_COMMIT_BRANCH" == "dev" ]; then
+        export VERSION="1.0.${BUILD_NUMBER}-dev-${SHORT_SHA}"
+      else
+        export VERSION="1.0.${BUILD_NUMBER}-${SHORT_SHA}"
+      fi
+      echo "VERSION=${VERSION}" >> build.env
+      echo "Computed version: ${VERSION}"
+  artifacts:
+    reports:
+      dotenv: build.env
 
 .build-template:
   stage: build
-  image: maven:3.9-eclipse-temurin-17
+  tags:
+    - shared
+  extends: .compute-version
   script:
-    - mvn clean package -DskipTests
+    - |
+      if [ "$SERVICE_TYPE" == "frontend" ]; then
+        cd $SERVICE_DIR
+        npm ci
+        if [ "$CI_COMMIT_BRANCH" == "dev" ]; then
+          npm run build -- --configuration development
+        else
+          npm run build -- --configuration production
+        fi
+      else
+        cd $SERVICE_DIR
+        mvn clean package -DskipTests
+      fi
   artifacts:
     paths:
-      - target/*.jar
+      - $SERVICE_DIR/target/*.jar
+      - $SERVICE_DIR/dist/
+    expire_in: 1 hour
+    reports:
+      dotenv: build.env
+  rules:
+    - if: $CI_COMMIT_BRANCH == "dev" || $CI_COMMIT_BRANCH == "main"
+
 
 .docker-template:
   stage: docker
-  image: docker:24
-  services:
-    - docker:24-dind
+  tags:
+    - shared
+  needs:
+    - job: build
+      artifacts: true
   script:
-    - docker build -t $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA .
-    - docker tag $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA $CI_REGISTRY_IMAGE:latest
-    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
-    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
-    - docker push $CI_REGISTRY_IMAGE:latest
+    - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+    - docker build -t $DOCKER_IMAGE:$VERSION $SERVICE_DIR
+    - docker push $DOCKER_IMAGE:$VERSION
+    - |
+      if [ "$CI_COMMIT_BRANCH" == "main" ]; then
+        docker tag $DOCKER_IMAGE:$VERSION $DOCKER_IMAGE:latest
+        docker push $DOCKER_IMAGE:latest
+      fi
+  rules:
+    - if: $CI_COMMIT_BRANCH == "dev" || $CI_COMMIT_BRANCH == "main"
+
 
 .deploy-staging-template:
   stage: deploy-staging
-  image: bitnami/kubectl:latest
+  tags:
+    - shared
+  needs:
+    - job: docker
+      artifacts: true
   script:
-    - kubectl set image deployment/$SERVICE_NAME
-        $SERVICE_NAME=$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
-        --namespace=staging
-    - kubectl rollout status deployment/$SERVICE_NAME --namespace=staging
+    - mkdir -p $HOME/.kube
+    - echo "$KUBECONFIG_DEV" > $HOME/.kube/config
+    - chmod 600 $HOME/.kube/config
+    - kubectl cluster-info
+    - kubectl create namespace dev --dry-run=client -o yaml | kubectl apply -f -
+    - |
+      helm upgrade --install $SERVICE_NAME charts/microservice \
+        -f helm-values/$SERVICE_NAME/values-dev.yaml \
+        --set global.imageTag=$VERSION \
+        --namespace dev \
+        --create-namespace
+    - kubectl rollout status deployment/$SERVICE_NAME -n dev --timeout=5m
   rules:
     - if: $CI_COMMIT_BRANCH == "dev"
 
 .deploy-production-template:
   stage: deploy-production
-  image: bitnami/kubectl:latest
+  tags:
+    - shared
+  needs:
+    - job: docker
+      artifacts: true
   script:
-    - kubectl set image deployment/$SERVICE_NAME
-        $SERVICE_NAME=$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
-        --namespace=production
-    - kubectl rollout status deployment/$SERVICE_NAME --namespace=production
+    - mkdir -p $HOME/.kube
+    - echo "$KUBECONFIG_PROD" > $HOME/.kube/config
+    - chmod 600 $HOME/.kube/config
+    - kubectl cluster-info
+    - kubectl create namespace prod --dry-run=client -o yaml | kubectl apply -f -
+    - |
+      helm upgrade --install $SERVICE_NAME charts/microservice \
+        -f helm-values/$SERVICE_NAME/values-prod.yaml \
+        --set global.imageTag=$VERSION \
+        --namespace prod \
+        --create-namespace
+    - kubectl rollout status deployment/$SERVICE_NAME -n prod --timeout=5m
+  when: manual
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
-  when: manual
