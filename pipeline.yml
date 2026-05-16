@@ -18,6 +18,7 @@
   stage: build
   tags:
     - shared
+  image: ${{ SERVICE_TYPE == 'frontend' && 'node:24' || 'maven:3.9-eclipse-temurin-17' }}
   extends: .compute-version
   script:
     - cd $SERVICE_DIR
