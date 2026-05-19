@@ -57,13 +57,17 @@
 
 .docker-template:
   stage: docker
+  image: docker:18.09
+  services:
+    - docker:18.09-dind
   tags:
     - shared
   needs:
     - job: build
       artifacts: true
-  script:
+  before_script:
     - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+  script:
     - docker build -t $DOCKER_IMAGE:$VERSION $SERVICE_DIR
     - docker push $DOCKER_IMAGE:$VERSION
     - |
