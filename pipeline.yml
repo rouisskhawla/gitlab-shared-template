@@ -57,9 +57,13 @@
 
 .docker-template:
   stage: docker
-  image: docker:18.09
+  image: docker:24.0.5
   services:
-    - docker:18.09-dind
+    - name: docker:24.0.5-dind
+      command: ["--tls=false"]
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
   tags:
     - shared
   needs:
