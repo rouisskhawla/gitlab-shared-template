@@ -14,31 +14,41 @@
     reports:
       dotenv: build.env
 
-.build-template:
+.build-backend-template:
   stage: build
+  image: maven:3.9-eclipse-temurin-17
+  extends: .compute-version
   tags:
     - shared
-  image: ${{ SERVICE_TYPE == 'frontend' && 'node:24' || 'maven:3.9-eclipse-temurin-17' }}
-  extends: .compute-version
   script:
     - cd $SERVICE_DIR
-    - |
-      if [ "$SERVICE_TYPE" == "frontend" ]; then
-        cd $SERVICE_DIR
-        npm ci
-        if [ "$CI_COMMIT_BRANCH" == "dev" ]; then
-          npm run build -- --configuration development
-        else
-          npm run build -- --configuration production
-        fi
-      else
-        mvn clean package -DskipTests
-      fi
+    - mvn clean package -DskipTests
   artifacts:
     paths:
       - $SERVICE_DIR/target/*.jar
+    reports:
+      dotenv: build.env
+  rules:
+    - if: $CI_COMMIT_BRANCH == "dev" || $CI_COMMIT_BRANCH == "main"
+
+.build-frontend-template:
+  stage: build
+  image: node:24
+  extends: .compute-version
+  tags:
+    - shared
+  script:
+    - cd $SERVICE_DIR
+    - npm ci
+    - |
+      if [ "$CI_COMMIT_BRANCH" == "dev" ]; then
+        npm run build -- --configuration development
+      else
+        npm run build -- --configuration production
+      fi
+  artifacts:
+    paths:
       - $SERVICE_DIR/dist/
-    expire_in: 1 hour
     reports:
       dotenv: build.env
   rules:
