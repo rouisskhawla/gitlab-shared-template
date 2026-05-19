@@ -20,9 +20,16 @@
   extends: .compute-version
   tags:
     - shared
+  cache:
+    key:
+      files:
+        - $SERVICE_DIR/pom.xml
+    paths:
+      - $SERVICE_DIR/.m2/repository
+    policy: pull-push
   script:
     - cd $SERVICE_DIR
-    - mvn clean package -DskipTests
+    - mvn clean package -DskipTests -Dmaven.repo.local=.m2/repository
   artifacts:
     paths:
       - $SERVICE_DIR/target/*.jar
