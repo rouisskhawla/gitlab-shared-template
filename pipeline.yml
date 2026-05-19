@@ -66,9 +66,6 @@
     DOCKER_TLS_CERTDIR: ""
   tags:
     - shared
-  needs:
-    - job: build
-      artifacts: true
   before_script:
     - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
   script:
@@ -88,9 +85,6 @@
   image: dtzar/helm-kubectl:4.2
   tags:
     - shared
-  needs:
-    - job: docker
-      artifacts: true
   script:
     - mkdir -p $HOME/.kube
     - echo "$KUBECONFIG_DEV" > $HOME/.kube/config
@@ -112,9 +106,6 @@
   image: dtzar/helm-kubectl:4.2
   tags:
     - shared
-  needs:
-    - job: docker
-      artifacts: true
   script:
     - mkdir -p $HOME/.kube
     - echo "$KUBECONFIG_PROD" > $HOME/.kube/config
